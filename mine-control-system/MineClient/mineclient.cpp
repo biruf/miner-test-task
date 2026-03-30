@@ -11,15 +11,20 @@ MineClient::MineClient(QObject* parent)
     connect(m_socket, &QTcpSocket::connected, this, &MineClient::onConnected);
     connect(m_socket, &QTcpSocket::disconnected, this, &MineClient::onDisconnected);
     connect(m_socket, &QTcpSocket::readyRead, this, &MineClient::onReadyRead);
-    connect(m_socket, QOverload<QAbstractSocket::SocketError>::of(&QTcpSocket::error),
-            this, &MineClient::onError);
+    connect(m_socket, &QTcpSocket::errorOccurred, this, &MineClient::onError);
 
     m_reconnectTimer.setInterval(5000);
     connect(&m_reconnectTimer, &QTimer::timeout, this, &MineClient::attemptReconnect);
 }
 
 MineClient::~MineClient() {
-    disconnectFromServer();
+    m_manualDisconnect = true;
+    m_reconnectTimer.stop();
+
+    if (m_socket->state() == QAbstractSocket::ConnectedState) {
+        m_socket->disconnectFromHost();
+        m_socket->waitForDisconnected(2000);
+    }
 }
 
 void MineClient::connectToServer(const QString& host, quint16 port) {
@@ -37,6 +42,7 @@ void MineClient::disconnectFromServer() {
 
     if (m_socket->state() == QAbstractSocket::ConnectedState) {
         m_socket->disconnectFromHost();
+        m_socket->waitForDisconnected(2000);
     }
 }
 

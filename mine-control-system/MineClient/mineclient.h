@@ -17,6 +17,7 @@ public:
     void connectToServer(const QString& host, quint16 port);
     void disconnectFromServer();
     bool isConnected() const;
+    void shutdown();
 
 public slots:
     void sendStartMiner();

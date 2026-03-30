@@ -7,7 +7,6 @@
 
 MineClient* g_client = nullptr;
 
-// Функция для вывода списка команд
 void showHelp() {
     qDebug() << "\n╔════════════════════════════════════════════════════╗";
     qDebug() << "║  Доступные команды:                                ║";
@@ -21,7 +20,6 @@ void showHelp() {
     qDebug() << "> " << Qt::endl;
 }
 
-// Функция обработки ввода
 void handleConsoleInput() {
     QTextStream qtin(stdin);
     if (qtin.atEnd()) return;
@@ -67,7 +65,6 @@ int main(int argc, char *argv[]) {
     qDebug() << "║     Mine Client (Офис управления шахтой)           ║";
     qDebug() << "╚════════════════════════════════════════════════════╝";
 
-    // Показываем команды при запуске
     showHelp();
 
     MineClient client;
@@ -91,7 +88,6 @@ int main(int argc, char *argv[]) {
     });
     autoMinerTimer.start(15000);
 
-    // Обработчики сигналов
     QObject::connect(&client, &MineClient::connected, []() {
         qDebug() << "\n✅ ПОДКЛЮЧЕНО к серверу шахты";
         showHelp();
@@ -111,7 +107,6 @@ int main(int argc, char *argv[]) {
         qDebug() << "║ Всего добыто металла: " << totalMetal << " ед.";
         qDebug() << "║ Активных шахтеров: " << minersCount;
         qDebug() << "╚════════════════════════════════════════╝";
-        // Показываем команды после статуса
         showHelp();
     });
 

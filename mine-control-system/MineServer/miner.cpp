@@ -6,7 +6,7 @@ Miner::Miner(int id, int duration, double efficiency)
     , m_duration(duration)
     , m_efficiency(efficiency) {
 
-    setAutoDelete(false); // Будем удалять сами после сигнала
+    setAutoDelete(false);
 }
 
 Miner::~Miner() {

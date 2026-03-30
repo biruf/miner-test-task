@@ -79,27 +79,42 @@ void DatabaseLogger::initDatabase() {
     m_db.setHostName("localhost");
     m_db.setPort(5432);
     m_db.setDatabaseName("mine_logs");
-    m_db.setUserName("postgres");
-     m_db.setPassword("postgres");
+    m_db.setUserName("mine_user");
+    m_db.setPassword("mine_password");
 
     if (!m_db.open()) {
         qWarning() << "Cannot open database:" << m_db.lastError().text();
-        qWarning() << "Database logging will not work";
         m_dbInitialized = false;
         return;
     }
 
     QSqlQuery query(m_db);
-    if (!query.exec("SELECT 1 FROM mine_events LIMIT 1")) {
 
-        QString createTable = "CREATE TABLE IF NOT EXISTS mine_events ("
-                             "id SERIAL PRIMARY KEY,"
-                             "event_data JSONB NOT NULL,"
-                             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
-        if (!query.exec(createTable)) {
-            qWarning() << "Failed to create table:" << query.lastError().text();
-            m_dbInitialized = false;
-            return;
+    QString checkTable = "SELECT EXISTS (SELECT FROM information_schema.tables "
+                        "WHERE table_name = 'mine_events')";
+
+    if (query.exec(checkTable) && query.next()) {
+        bool tableExists = query.value(0).toBool();
+
+        if (!tableExists) {
+            qDebug() << "Creating mine_events table...";
+
+            // Создаем таблицу
+            QString createTable = "CREATE TABLE IF NOT EXISTS mine_events ("
+                                 "id SERIAL PRIMARY KEY,"
+                                 "event_data JSONB NOT NULL,"
+                                 "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
+
+            if (!query.exec(createTable)) {
+                qWarning() << "Failed to create table:" << query.lastError().text();
+                m_dbInitialized = false;
+                return;
+            }
+
+            // Создаем индекс для ускорения запросов
+            query.exec("CREATE INDEX IF NOT EXISTS idx_mine_events_created_at ON mine_events(created_at)");
+
+            qDebug() << "Table mine_events created successfully";
         }
     }
 

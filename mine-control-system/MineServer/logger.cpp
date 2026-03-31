@@ -75,6 +75,66 @@ void DatabaseLogger::initDatabase() {
     static int connectionCounter = 0;
     QString connName = m_connectionName + QString::number(connectionCounter++);
 
+    qDebug() << "Initializing database...";
+
+    QSqlDatabase defaultDb = QSqlDatabase::addDatabase("QPSQL", connName + "_default");
+    defaultDb.setHostName("localhost");
+    defaultDb.setPort(5432);
+    defaultDb.setDatabaseName("postgres");
+    defaultDb.setUserName("postgres");
+    defaultDb.setPassword("postgres");
+
+    if (!defaultDb.open()) {
+        qWarning() << "Cannot connect to default database:" << defaultDb.lastError().text();
+        qWarning() << "Make sure PostgreSQL is running: sudo systemctl start postgresql";
+        m_dbInitialized = false;
+        return;
+    }
+
+    qDebug() << "Connected to default database";
+    QSqlQuery query(defaultDb);
+
+    bool userExists = false;
+    if (query.exec("SELECT 1 FROM pg_roles WHERE rolname = 'mine_user'")) {
+        if (query.next()) {
+            userExists = true;
+            qDebug() << "User mine_user already exists";
+        }
+    }
+
+    if (!userExists) {
+        qDebug() << "Creating user mine_user...";
+        if (!query.exec("CREATE USER mine_user WITH PASSWORD 'mine_password'")) {
+            qWarning() << "Failed to create user:" << query.lastError().text();
+            defaultDb.close();
+            m_dbInitialized = false;
+            return;
+        }
+        qDebug() << "User mine_user created successfully";
+    }
+
+    bool dbExists = false;
+    if (query.exec("SELECT 1 FROM pg_database WHERE datname = 'mine_logs'")) {
+        if (query.next()) {
+            dbExists = true;
+            qDebug() << "Database mine_logs already exists";
+        }
+    }
+
+    if (!dbExists) {
+        qDebug() << "Creating database mine_logs...";
+        if (!query.exec("CREATE DATABASE mine_logs OWNER mine_user")) {
+            qWarning() << "Failed to create database:" << query.lastError().text();
+            defaultDb.close();
+            m_dbInitialized = false;
+            return;
+        }
+        qDebug() << "Database mine_logs created successfully";
+    }
+
+    defaultDb.close();
+    QSqlDatabase::removeDatabase(connName + "_default");
+
     m_db = QSqlDatabase::addDatabase("QPSQL", connName);
     m_db.setHostName("localhost");
     m_db.setPort(5432);
@@ -83,43 +143,29 @@ void DatabaseLogger::initDatabase() {
     m_db.setPassword("mine_password");
 
     if (!m_db.open()) {
-        qWarning() << "Cannot open database:" << m_db.lastError().text();
+        qWarning() << "Cannot connect to mine_logs database:" << m_db.lastError().text();
         m_dbInitialized = false;
         return;
     }
 
-    QSqlQuery query(m_db);
+    qDebug() << "Connected to mine_logs database";
 
-    QString checkTable = "SELECT EXISTS (SELECT FROM information_schema.tables "
-                        "WHERE table_name = 'mine_events')";
+    QSqlQuery tableQuery(m_db);
+    QString createTable = "CREATE TABLE IF NOT EXISTS mine_events ("
+                         "id SERIAL PRIMARY KEY,"
+                         "event_data JSONB NOT NULL,"
+                         "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
 
-    if (query.exec(checkTable) && query.next()) {
-        bool tableExists = query.value(0).toBool();
-
-        if (!tableExists) {
-            qDebug() << "Creating mine_events table...";
-
-            // Создаем таблицу
-            QString createTable = "CREATE TABLE IF NOT EXISTS mine_events ("
-                                 "id SERIAL PRIMARY KEY,"
-                                 "event_data JSONB NOT NULL,"
-                                 "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
-
-            if (!query.exec(createTable)) {
-                qWarning() << "Failed to create table:" << query.lastError().text();
-                m_dbInitialized = false;
-                return;
-            }
-
-            // Создаем индекс для ускорения запросов
-            query.exec("CREATE INDEX IF NOT EXISTS idx_mine_events_created_at ON mine_events(created_at)");
-
-            qDebug() << "Table mine_events created successfully";
-        }
+    if (!tableQuery.exec(createTable)) {
+        qWarning() << "Failed to create table:" << tableQuery.lastError().text();
+        m_dbInitialized = false;
+        return;
     }
 
+    tableQuery.exec("CREATE INDEX IF NOT EXISTS idx_mine_events_created_at ON mine_events(created_at)");
+
     m_dbInitialized = true;
-    qDebug() << "Database logger initialized successfully";
+    qDebug() << "Database logger initialized successfully (auto-created database and user)";
 }
 
 void DatabaseLogger::addEvent(const QJsonObject& event) {

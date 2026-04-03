@@ -9,12 +9,13 @@
 
 enum class MessageType {
     UNKNOWN = 0,
-    START_MINER = 1,        // Client -> Server
-    GET_STATUS = 2,         // Client -> Server
-    STATUS_RESPONSE = 3,    // Server -> Client
-    SET_LOGGER_TYPE = 4,    // Client -> Server
-    JOURNAL_EVENTS = 5,     // Server -> Client
-    ERROR = 6               // Server -> Client
+    START_MINER = 1,
+    GET_STATUS = 2,
+    STATUS_RESPONSE = 3,
+    SET_LOGGER_TYPE = 4,
+    JOURNAL_EVENTS = 5,
+    ERROR = 6,
+    SUCCESS = 7
 };
 
 struct Message {
@@ -88,6 +89,13 @@ struct Message {
         msg.data["error"] = errorText;
         return msg;
     }
+
+    static Message createSuccess(const QString& message) {
+        Message msg;
+        msg.type = MessageType::SUCCESS;
+        msg.data["message"] = message;
+        return msg;
+    }
 };
 
-#endif
+#endif // MESSAGES_H

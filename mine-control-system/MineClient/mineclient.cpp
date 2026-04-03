@@ -83,6 +83,10 @@ void MineClient::onReadyRead() {
                 emit journalEventsReceived(msg.data["events"].toArray());
                 break;
 
+            case MessageType::SUCCESS:
+                qDebug() << "✅" << msg.data["message"].toString();
+                break;
+
             case MessageType::ERROR:
                 emit errorReceived(msg.data["error"].toString());
                 break;

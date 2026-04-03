@@ -400,23 +400,15 @@ moc_mineclient.cpp: ../MineClient/mineclient.h \
 
 compiler_moc_objc_header_make_all:
 compiler_moc_objc_header_clean:
-compiler_moc_source_make_all: main.moc
+compiler_moc_source_make_all:
 compiler_moc_source_clean:
-	-$(DEL_FILE) main.moc
-main.moc: ../MineClient/main.cpp \
-		../MineClient/mineclient.h \
-		../common/messages.h \
-		moc_predefs.h \
-		/usr/lib/qt5/bin/moc
-	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/alex/mine-control-system/build-MineClient-Desktop-Debug/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-clang -I/home/alex/mine-control-system/MineClient -I/home/alex/mine-control-system/common -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtNetwork -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I. -I/usr/include/c++/8 -I/usr/include/x86_64-linux-gnu/c++/8 -I/usr/include/c++/8/backward -I/usr/local/include -I/usr/lib/llvm-11/lib/clang/11.0.1/include -I/usr/include/x86_64-linux-gnu -I/usr/include ../MineClient/main.cpp -o main.moc
-
 compiler_yacc_decl_make_all:
 compiler_yacc_decl_clean:
 compiler_yacc_impl_make_all:
 compiler_yacc_impl_clean:
 compiler_lex_make_all:
 compiler_lex_clean:
-compiler_clean: compiler_moc_predefs_clean compiler_moc_header_clean compiler_moc_source_clean 
+compiler_clean: compiler_moc_predefs_clean compiler_moc_header_clean 
 
 ####### Compile
 

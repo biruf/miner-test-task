@@ -44,6 +44,7 @@ public:
 
 private:
     void initDatabase();
+    bool testConnection(QSqlDatabase& db, const QString& user, const QString& password);
 
     QSqlDatabase m_db;
     QMutex m_mutex;

@@ -124,19 +124,18 @@ void MineServer::processMessage(QTcpSocket* client, const Message& msg) {
             break;
         }
 
-        case MessageType::SET_LOGGER_TYPE: {
-            QString loggerType = msg.data["logger_type"].toString();
+       case MessageType::SET_LOGGER_TYPE: {
+          QString loggerType = msg.data["logger_type"].toString();
             if (loggerType == "database") {
                 m_logger = std::make_shared<DatabaseLogger>();
-                sendToClient(client, Message::createError("Logger switched to database"));
-                qDebug() << "Switched to database logging";
-            } else {
-                m_logger = std::make_shared<FileLogger>();
-                sendToClient(client, Message::createError("Logger switched to file"));
-                qDebug() << "Switched to file logging";
-            }
-            break;
-        }
+                 // Отправляем как ERROR вместо SUCCESS
+                     sendToClient(client, Message::createError("Logger switched to database"));
+                      } else {
+                       m_logger = std::make_shared<FileLogger>();
+                         sendToClient(client, Message::createError("Logger switched to file"));
+                          }
+                          break;
+         }
 
         default:
             sendToClient(client, Message::createError("Unknown message type"));

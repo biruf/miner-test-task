@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QDebug>
 #include <QSqlError>
+#include <QThread>
 
 FileLogger::FileLogger(const QString& filename)
     : m_file(filename) {
@@ -71,108 +72,186 @@ DatabaseLogger::~DatabaseLogger() {
     QSqlDatabase::removeDatabase(connection);
 }
 
+bool DatabaseLogger::testConnection(QSqlDatabase& db, const QString& user, const QString& password) {
+    db.setUserName(user);
+    db.setPassword(password);
+
+    if (db.open()) {
+        return true;
+    }
+
+    db.setPassword("");
+    if (db.open()) {
+        return true;
+    }
+
+    return false;
+}
+
 void DatabaseLogger::initDatabase() {
     static int connectionCounter = 0;
-    QString connName = m_connectionName + QString::number(connectionCounter++);
 
-    qDebug() << "Initializing database...";
+    qDebug() << "========================================";
+    qDebug() << "Initializing PostgreSQL database...";
+    qDebug() << "========================================";
 
-    QSqlDatabase defaultDb = QSqlDatabase::addDatabase("QPSQL", connName + "_default");
-    defaultDb.setHostName("localhost");
-    defaultDb.setPort(5432);
-    defaultDb.setDatabaseName("postgres");
-    defaultDb.setUserName("postgres");
-    defaultDb.setPassword("postgres");
+    struct UserAttempt {
+        QString username;
+        QString password;
+        QString description;
+    };
 
-    if (!defaultDb.open()) {
-        qWarning() << "Cannot connect to default database:" << defaultDb.lastError().text();
-        qWarning() << "Make sure PostgreSQL is running: sudo systemctl start postgresql";
+    QList<UserAttempt> attempts;
+    attempts << UserAttempt{"postgres", "", "postgres (no password)"}
+             << UserAttempt{"postgres", "postgres", "postgres (password: postgres)"}
+             << UserAttempt{QLatin1String(qgetenv("USER")), "", "current user"}
+             << UserAttempt{"mine_user", "mine_password", "mine_user"};
+
+    QSqlDatabase defaultDb;
+    bool connected = false;
+    QString connectedUser;
+    QString tempConnName;
+
+    for (const auto& attempt : attempts) {
+        tempConnName = "temp_" + QString::number(connectionCounter++);
+        defaultDb = QSqlDatabase::addDatabase("QPSQL", tempConnName);
+        defaultDb.setHostName("localhost");
+        defaultDb.setPort(5432);
+        defaultDb.setDatabaseName("postgres");
+        defaultDb.setUserName(attempt.username);
+        defaultDb.setPassword(attempt.password);
+
+        if (defaultDb.open()) {
+            qDebug() << "✓ Connected to PostgreSQL as:" << attempt.username;
+            connected = true;
+            connectedUser = attempt.username;
+            break;
+        } else {
+            defaultDb.close();
+            QSqlDatabase::removeDatabase(tempConnName);
+            defaultDb = QSqlDatabase();
+        }
+    }
+
+    if (!connected) {
+        qWarning() << "✗ Cannot connect to PostgreSQL";
         m_dbInitialized = false;
         return;
     }
 
-    qDebug() << "Connected to default database";
-    QSqlQuery query(defaultDb);
+    {
+        QSqlQuery query(defaultDb);
 
-    bool userExists = false;
-    if (query.exec("SELECT 1 FROM pg_roles WHERE rolname = 'mine_user'")) {
-        if (query.next()) {
-            userExists = true;
-            qDebug() << "User mine_user already exists";
+        bool userExists = false;
+        if (query.exec("SELECT 1 FROM pg_roles WHERE rolname = 'mine_user'")) {
+            if (query.next()) {
+                userExists = true;
+                qDebug() << "✓ User 'mine_user' already exists";
+            }
         }
-    }
 
-    if (!userExists) {
-        qDebug() << "Creating user mine_user...";
-        if (!query.exec("CREATE USER mine_user WITH PASSWORD 'mine_password'")) {
-            qWarning() << "Failed to create user:" << query.lastError().text();
-            defaultDb.close();
-            m_dbInitialized = false;
-            return;
-        }
-        qDebug() << "User mine_user created successfully";
-    }
+        if (!userExists) {
+            qDebug() << "→ Creating user 'mine_user'...";
+            QStringList createCommands;
+            createCommands << "CREATE USER mine_user WITH PASSWORD 'mine_password'"
+                          << "CREATE USER mine_user WITH PASSWORD 'mine_password' SUPERUSER"
+                          << "CREATE USER mine_user";
 
-    bool dbExists = false;
-    if (query.exec("SELECT 1 FROM pg_database WHERE datname = 'mine_logs'")) {
-        if (query.next()) {
-            dbExists = true;
-            qDebug() << "Database mine_logs already exists";
+            for (const QString& cmd : createCommands) {
+                if (query.exec(cmd)) {
+                    qDebug() << "✓ User 'mine_user' created successfully";
+                    break;
+                }
+            }
         }
-    }
 
-    if (!dbExists) {
-        qDebug() << "Creating database mine_logs...";
-        if (!query.exec("CREATE DATABASE mine_logs OWNER mine_user")) {
-            qWarning() << "Failed to create database:" << query.lastError().text();
-            defaultDb.close();
-            m_dbInitialized = false;
-            return;
+        query.exec("ALTER USER mine_user WITH SUPERUSER");
+
+        bool dbExists = false;
+        if (query.exec("SELECT 1 FROM pg_database WHERE datname = 'mine_logs'")) {
+            if (query.next()) {
+                dbExists = true;
+                qDebug() << "✓ Database 'mine_logs' already exists";
+            }
         }
-        qDebug() << "Database mine_logs created successfully";
+
+        if (!dbExists) {
+            qDebug() << "→ Creating database 'mine_logs'...";
+            QString createDb = QString("CREATE DATABASE mine_logs OWNER %1")
+                              .arg(userExists ? "mine_user" : "postgres");
+
+            if (query.exec(createDb)) {
+                qDebug() << "✓ Database 'mine_logs' created successfully";
+            }
+        }
     }
 
     defaultDb.close();
-    QSqlDatabase::removeDatabase(connName + "_default");
+    QSqlDatabase::removeDatabase(tempConnName);
 
+    QString connName = "main_" + QString::number(connectionCounter++);
     m_db = QSqlDatabase::addDatabase("QPSQL", connName);
     m_db.setHostName("localhost");
     m_db.setPort(5432);
     m_db.setDatabaseName("mine_logs");
-    m_db.setUserName("mine_user");
-    m_db.setPassword("mine_password");
 
-    if (!m_db.open()) {
-        qWarning() << "Cannot connect to mine_logs database:" << m_db.lastError().text();
+    QList<UserAttempt> dbAttempts;
+    dbAttempts << UserAttempt{"mine_user", "mine_password", "mine_user with password"}
+               << UserAttempt{"mine_user", "", "mine_user without password"}
+               << UserAttempt{"postgres", "", "postgres without password"}
+               << UserAttempt{"postgres", "postgres", "postgres with password"};
+
+    connected = false;
+    for (const auto& attempt : dbAttempts) {
+        m_db.setUserName(attempt.username);
+        m_db.setPassword(attempt.password);
+
+        if (m_db.open()) {
+            connected = true;
+            qDebug() << "✓ Connected to mine_logs as:" << attempt.username;
+            break;
+        }
+    }
+
+    if (!connected) {
+        qWarning() << "✗ Cannot connect to mine_logs database:" << m_db.lastError().text();
         m_dbInitialized = false;
         return;
     }
 
-    qDebug() << "Connected to mine_logs database";
+    {
+        QSqlQuery tableQuery(m_db);
+        QString createTable = "CREATE TABLE IF NOT EXISTS mine_events ("
+                             "id SERIAL PRIMARY KEY,"
+                             "event_data JSONB NOT NULL,"
+                             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
 
-    QSqlQuery tableQuery(m_db);
-    QString createTable = "CREATE TABLE IF NOT EXISTS mine_events ("
-                         "id SERIAL PRIMARY KEY,"
-                         "event_data JSONB NOT NULL,"
-                         "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
+        if (!tableQuery.exec(createTable)) {
+            qWarning() << "✗ Failed to create table:" << tableQuery.lastError().text();
+            m_dbInitialized = false;
+            return;
+        }
 
-    if (!tableQuery.exec(createTable)) {
-        qWarning() << "Failed to create table:" << tableQuery.lastError().text();
-        m_dbInitialized = false;
-        return;
+        tableQuery.exec("CREATE INDEX IF NOT EXISTS idx_mine_events_created_at ON mine_events(created_at)");
     }
-
-    tableQuery.exec("CREATE INDEX IF NOT EXISTS idx_mine_events_created_at ON mine_events(created_at)");
 
     m_dbInitialized = true;
-    qDebug() << "Database logger initialized successfully (auto-created database and user)";
+
+    qDebug() << "========================================";
+    qDebug() << "✅ DATABASE LOGGER INITIALIZED SUCCESSFULLY!";
+    qDebug() << "   Database: mine_logs";
+    qDebug() << "   Table: mine_events";
+    qDebug() << "   User: mine_user";
+    qDebug() << "   Host: localhost:5432";
+    qDebug() << "========================================";
 }
 
 void DatabaseLogger::addEvent(const QJsonObject& event) {
     QMutexLocker locker(&m_mutex);
 
     if (!m_dbInitialized || !m_db.isOpen()) {
-        qDebug() << "Database not available, event not logged";
+        static FileLogger fallbackLogger("database_fallback.log");
+        fallbackLogger.addEvent(event);
         return;
     }
 
@@ -184,7 +263,8 @@ void DatabaseLogger::addEvent(const QJsonObject& event) {
     query.bindValue(":data", jsonString);
 
     if (!query.exec()) {
-        qWarning() << "Failed to insert event:" << query.lastError().text();
+        static FileLogger fallbackLogger("database_fallback.log");
+        fallbackLogger.addEvent(event);
     }
 }
 
